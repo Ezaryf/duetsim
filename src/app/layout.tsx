@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'DuetSim - Pairwise Future Outcome Engine',
-  description: 'Simulate the future between two forces. Predict how entities interact, adapt, and reshape each other\'s future.',
+  title: 'FutureForge — Pairwise Future Conflict Engine',
+  description: 'Simulate what happens when two forces collide. Inject real-world events, explore branching timelines, and watch futures unfold through a connected causal outcome graph.',
 }
 
 export default function RootLayout({
