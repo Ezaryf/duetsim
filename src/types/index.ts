@@ -1,4 +1,13 @@
-export type EntityType = 'repo' | 'company' | 'product' | 'model'
+// ─── Entity Types ────────────────────────────────────────────────────────────
+
+export type EntityCategory =
+  | 'repo'
+  | 'company'
+  | 'product'
+  | 'model'
+  | 'brand'
+  | 'policy'
+  | 'founder'
 
 export interface EntityMetrics {
   stars?: number
@@ -17,78 +26,130 @@ export interface EntityMetrics {
   topics?: string[]
   language?: string
   license?: string
+  marketCap?: number
+  revenue?: number
+  users?: number
 }
 
 export interface Entity {
   id: string
-  type: EntityType
+  category: EntityCategory
   externalId: string
   name: string
   owner?: string
   description?: string
   metrics?: EntityMetrics
-  embedding?: number[]
+  avatar?: string
   createdAt: string
   updatedAt: string
 }
 
-export type SimulationDepth = 'fast' | 'balanced' | 'deep'
+// ─── Event Types ─────────────────────────────────────────────────────────────
 
-export interface Duel {
+export type EventCategory =
+  | 'funding'
+  | 'scandal'
+  | 'launch'
+  | 'policy'
+  | 'backlash'
+  | 'viral'
+  | 'feature'
+  | 'regulation'
+  | 'acquisition'
+  | 'pivot'
+  | 'custom'
+
+export interface ForgeEvent {
   id: string
-  userId?: string
+  label: string
+  description: string
+  impact: number               // -100 to +100
+  targetEntity: 'A' | 'B' | 'both'
+  day: number                  // injection point on timeline
+  category: EventCategory
+  icon?: string
+  stateChange?: string         // AI generated state change description
+  probability?: number         // AI generated probability of this exact timeline occurring
+  createdAt: string
+}
+
+// ─── Timeline & Branching Types ──────────────────────────────────────────────
+
+export interface TimelineNode {
+  id: string
+  day: number
+  parentId: string | null
+  branchId: string
+  entityAScore: number         // 0-100
+  entityBScore: number         // 0-100
+  confidenceA: number          // 0-1
+  confidenceB: number          // 0-1
+  triggerEvent?: ForgeEvent
+  stateChange: string          // e.g. "hiring surge"
+  probabilityShift: number     // delta from parent
+  reason: string               // e.g. "Funding event → hiring surge → product acceleration"
+}
+
+export interface CausalEdge {
+  id: string
+  fromNodeId: string
+  toNodeId: string
+  label: string
+  strength: number             // 0-1
+}
+
+export interface Branch {
+  id: string
+  name: string
+  color: string
+  nodes: TimelineNode[]
+  events: ForgeEvent[]
+  probability: number          // 0-100  how likely this branch is
+  isActive: boolean
+  parentBranchId: string | null
+  forkDay: number | null       // day where this branch forked
+}
+
+// ─── Simulation Types ────────────────────────────────────────────────────────
+
+export interface Simulation {
+  id: string
   entityA: Entity
   entityB: Entity
-  timeHorizon: number
-  depth: SimulationDepth
-  status: 'pending' | 'running' | 'completed' | 'failed'
+  branches: Branch[]
+  causalEdges: CausalEdge[]
+  activeBranchId: string
+  totalDays: number
   createdAt: string
 }
 
-export type OutcomeType =
-  | 'a_dominates'
-  | 'b_dominates'
-  | 'mutual_growth'
-  | 'mutual_decline'
-  | 'a_rises_b_stabilizes'
-  | 'b_rises_a_stabilizes'
-  | 'market_split'
-  | 'oscillation'
-  | 'convergence'
+// ─── Replay & Score Types ────────────────────────────────────────────────────
 
-export interface Outcome {
-  type: OutcomeType
-  probability: number
-  confidence: 'low' | 'medium' | 'high'
-  drivers: string[]
-  risks: string[]
-  milestones: { day: number; event: string }[]
-}
-
-export interface TrajectoryPoint {
-  day: number
-  entityA: number
-  entityB: number
-  confidenceLow: number
-  confidenceHigh: number
-}
-
-export interface SimulationResult {
+export interface Prediction {
   id: string
-  duelId: string
-  outcomes: Outcome[]
-  trajectories: TrajectoryPoint[][]
-  narrative: Record<OutcomeType, string>
+  simulationId: string
+  branchId: string
+  predictedWinner: 'A' | 'B' | 'tie'
+  confidence: number
   createdAt: string
 }
 
-export interface ScenarioParams {
-  aPopularity: number
-  bPopularity: number
-  aContributors: number
-  bContributors: number
-  viralEvent: boolean
-  majorRelease: boolean
-  fundingBoost: boolean
-  regulationShock: boolean
+export interface ReplayScore {
+  simulationId: string
+  predictions: Prediction[]
+  accuracyScore: number        // 0-100
+  createdAt: string
 }
+
+// ─── Duel Category Presets ───────────────────────────────────────────────────
+
+export interface DuelPreset {
+  id: string
+  category: string
+  label: string
+  entityA: Partial<Entity>
+  entityB: Partial<Entity>
+  description: string
+}
+
+export type SimulationStatus = 'idle' | 'running' | 'complete' | 'error'
