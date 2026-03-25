@@ -42,7 +42,7 @@ export default function EventForge({ onInjectEvent, entityAName, entityBName, ev
   // Core prediction function used by both custom text and quick inject
   const runPrediction = async (text: string, currentTarget: 'A' | 'B' | 'both') => {
     if (rateLimitCooldown > 0) {
-      setInlineError(`Rate limited. Please wait ${rateLimitCooldown}s...`)
+      setInlineError(`Rate limited. Please wait ${rateLimitCooldown}s... (Use a different model in Settings to avoid rate limits)`)
       return
     }
     if (isInjecting) return
@@ -93,12 +93,17 @@ export default function EventForge({ onInjectEvent, entityAName, entityBName, ev
       } else {
         const errorMsg = aiData.error || "Unknown AI error"
         const isRateLimit = res.status === 429 || errorMsg.includes('429') || errorMsg.toLowerCase().includes('rate limit')
+        const isModelUnavailable = res.status === 400 && errorMsg.toLowerCase().includes('not available')
         
         if (isRateLimit) {
-          setRateLimitCooldown(8)
-          setInlineError("AI rate limit reached. Using heuristic fallback...")
+          setRateLimitCooldown(15)
+          setInlineError("AI rate limit reached. Waiting 15s before retry...")
+        } else if (isModelUnavailable) {
+          setInlineError(`Model unavailable: ${errorMsg}. Try glm-5-free or big-pickle in Settings.`)
+        } else if (res.status === 401) {
+          setInlineError("Auth failed. Check your API key in Settings — billing may be required.")
         } else {
-          setInlineError(`AI failed: ${errorMsg}. Fell back to heuristic.`)
+          setInlineError(`AI error: ${errorMsg}. Fell back to heuristic.`)
         }
         setLastAIStatus('fallback')
         onInjectEvent(text, currentTarget)
