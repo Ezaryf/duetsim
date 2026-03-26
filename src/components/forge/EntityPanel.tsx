@@ -4,16 +4,15 @@ import { motion } from 'framer-motion'
 import type { Entity } from '@/types'
 
 interface EntityPanelProps {
-  entity: Entity
-  side: 'A' | 'B'
-  confidence: number
-  score: number
+  readonly entity: Entity
+  readonly side: 'A' | 'B'
+  readonly confidence: number
+  readonly score: number
 }
 
 export default function EntityPanel({ entity, side, confidence, score }: EntityPanelProps) {
   const isA = side === 'A'
   const color = isA ? '#06b6d4' : '#f43f5e'
-  const glowClass = isA ? 'neon-glow-a' : 'neon-glow-b'
   const borderColor = isA ? 'border-[#06b6d4]/30' : 'border-[#f43f5e]/30'
 
   const circumference = 2 * Math.PI * 36

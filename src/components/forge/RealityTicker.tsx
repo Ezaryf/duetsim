@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import { AlertTriangle } from 'lucide-react'
 import type { ForgeEvent } from '@/types'
 
-export default function RealityTicker({ events }: { events: ForgeEvent[] }) {
+export default function RealityTicker({ events }: Readonly<{ events: ForgeEvent[] }>) {
   if (events.length === 0) return null
 
   // Ensure string interpolation works for long marquee
@@ -27,12 +27,12 @@ export default function RealityTicker({ events }: { events: ForgeEvent[] }) {
            className="whitespace-nowrap flex items-center px-4"
         >
           {items.map((e, i) => (
-             <span key={i} className="text-[11px] font-mono flex items-center">
+             <span key={e.id + '-' + i} className="text-[11px] font-mono flex items-center">
                <span className="text-[var(--text-muted)] mr-3 opacity-70">[DAY {e.day}]</span>
                <span className={e.impact > 0 ? 'text-[#06b6d4]' : 'text-[#f43f5e]'}>■</span>
                <span className="text-[var(--text-primary)] font-bold ml-2 tracking-wide text-shadow-sm">{e.label.toUpperCase()}:</span>
                <span className="text-[var(--text-secondary)] ml-1.5">{e.description}</span>
-               <span className="text-[#f43f5e]/40 mx-6 tracking-tight">///</span>
+               <span className="text-[#f43f5e]/40 mx-6 tracking-tight">{'///'}</span>
              </span>
           ))}
         </motion.div>

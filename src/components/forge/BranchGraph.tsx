@@ -2,12 +2,12 @@
 
 import { useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import type { Branch, TimelineNode, Simulation } from '@/types'
+import type { TimelineNode, Simulation } from '@/types'
 
 interface BranchGraphProps {
-  simulation: Simulation
-  activeBranchId: string
-  onSelectBranch: (branchId: string) => void
+  readonly simulation: Simulation
+  readonly activeBranchId: string
+  readonly onSelectBranch: (branchId: string) => void
 }
 
 export default function BranchGraph({ simulation, activeBranchId, onSelectBranch }: BranchGraphProps) {
@@ -190,7 +190,7 @@ export default function BranchGraph({ simulation, activeBranchId, onSelectBranch
 
         {/* Score labels at end */}
         {activeBranch && activeBranch.nodes.length > 0 && (() => {
-          const lastNode = activeBranch.nodes[activeBranch.nodes.length - 1]
+          const lastNode = activeBranch.nodes.at(-1)!
           return (
             <>
               <text x={graphWidth - 5} y={yScaleA(lastNode.entityAScore) + 4} fill="#06b6d4" fontSize="11" textAnchor="end" fontFamily="Plus Jakarta Sans" fontWeight="700">

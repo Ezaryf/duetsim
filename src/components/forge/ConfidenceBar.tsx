@@ -3,10 +3,10 @@
 import { motion } from 'framer-motion'
 
 interface ConfidenceBarProps {
-  scoreA: number
-  scoreB: number
-  nameA: string
-  nameB: string
+  readonly scoreA: number
+  readonly scoreB: number
+  readonly nameA: string
+  readonly nameB: string
 }
 
 export default function ConfidenceBar({ scoreA, scoreB, nameA, nameB }: ConfidenceBarProps) {

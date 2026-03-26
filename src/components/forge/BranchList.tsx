@@ -5,9 +5,9 @@ import { GitBranch, Check } from 'lucide-react'
 import type { Branch } from '@/types'
 
 interface BranchListProps {
-  branches: Branch[]
-  activeBranchId: string
-  onSelectBranch: (branchId: string) => void
+  readonly branches: Branch[]
+  readonly activeBranchId: string
+  readonly onSelectBranch: (branchId: string) => void
 }
 
 export default function BranchList({ branches, activeBranchId, onSelectBranch }: BranchListProps) {
@@ -31,10 +31,12 @@ export default function BranchList({ branches, activeBranchId, onSelectBranch }:
       <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
         {sorted.map((branch, i) => {
           const isActive = branch.id === activeBranchId
-          const lastNode = branch.nodes[branch.nodes.length - 1]
+          const lastNode = branch.nodes.at(-1)
           const scoreA = lastNode?.entityAScore || 50
           const scoreB = lastNode?.entityBScore || 50
-          const winner = scoreA > scoreB ? 'A' : scoreB > scoreA ? 'B' : 'TIE'
+          let winner: 'A' | 'B' | 'TIE' = 'TIE'
+          if (scoreA > scoreB) winner = 'A'
+          else if (scoreB > scoreA) winner = 'B'
 
           return (
             <motion.button
