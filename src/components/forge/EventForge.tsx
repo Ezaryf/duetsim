@@ -9,14 +9,16 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useSimulationStore } from '@/stores/simulationStore'
 import { getActiveBranch } from '@/lib/engine/engine'
 
+type EventTarget = 'A' | 'B' | 'both'
+
 interface EventForgeProps {
-  onInjectEvent: (text: string, target: 'A' | 'B' | 'both', overrides?: Partial<ForgeEvent>) => void
-  entityAName: string
-  entityBName: string
-  eventHistory: ForgeEvent[]
+  readonly onInjectEvent: (text: string, target: EventTarget, overrides?: Partial<ForgeEvent>) => void
+  readonly entityAName: string
+  readonly entityBName: string
+  readonly eventHistory: ForgeEvent[]
 }
 
-export default function EventForge({ onInjectEvent, entityAName, entityBName, eventHistory }: EventForgeProps) {
+export default function EventForge({ onInjectEvent, entityAName, entityBName, eventHistory }: Readonly<EventForgeProps>) {
   const { apiKey, baseUrl, model, endpointType } = useSettingsStore()
   const { simulation } = useSimulationStore()
 
@@ -40,7 +42,7 @@ export default function EventForge({ onInjectEvent, entityAName, entityBName, ev
   }, [rateLimitCooldown])
 
   // Core prediction function used by both custom text and quick inject
-  const runPrediction = async (text: string, currentTarget: 'A' | 'B' | 'both') => {
+  const runPrediction = async (text: string, currentTarget: EventTarget) => {
     if (rateLimitCooldown > 0) {
       setInlineError(`Rate limited. Please wait ${rateLimitCooldown}s... (Use a different model in Settings to avoid rate limits)`)
       return
@@ -52,16 +54,13 @@ export default function EventForge({ onInjectEvent, entityAName, entityBName, ev
 
     try {
       if (!apiKey) {
-        console.warn("No AI API key found, using heuristic simulation.")
         onInjectEvent(text, currentTarget)
         setLastAIStatus('fallback')
         setInlineError('No API key — used heuristic fallback.')
         return
       }
 
-      if (!simulation) return
-
-      const activeBranch = getActiveBranch(simulation)
+      const activeBranch = simulation ? getActiveBranch(simulation) : null
       const lastNode = activeBranch?.nodes.at(-1)
       
       const res = await fetch('/api/predictions', {
@@ -91,32 +90,35 @@ export default function EventForge({ onInjectEvent, entityAName, entityBName, ev
         })
         setLastAIStatus('success')
       } else {
-        const errorMsg = aiData.error || "Unknown AI error"
-        const isRateLimit = res.status === 429 || errorMsg.includes('429') || errorMsg.toLowerCase().includes('rate limit')
-        const isModelUnavailable = res.status === 400 && errorMsg.toLowerCase().includes('not available')
-        
-        if (isRateLimit) {
-          setRateLimitCooldown(15)
-          setInlineError("AI rate limit reached. Waiting 15s before retry...")
-        } else if (isModelUnavailable) {
-          setInlineError(`Model unavailable: ${errorMsg}. Try glm-5-free or big-pickle in Settings.`)
-        } else if (res.status === 401) {
-          setInlineError("Auth failed. Check your API key in Settings — billing may be required.")
-        } else {
-          setInlineError(`AI error: ${errorMsg}. Fell back to heuristic.`)
-        }
-        setLastAIStatus('fallback')
-        onInjectEvent(text, currentTarget)
+        handleAIError(res.status, aiData.error || "Unknown AI error", text, currentTarget)
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Could not reach the AI gateway."
-      console.error("AI fetch error:", message)
       setInlineError(`Connection error: ${message}. Fell back to heuristic.`)
       setLastAIStatus('fallback')
       onInjectEvent(text, currentTarget)
     } finally {
       setIsInjecting(false)
     }
+  }
+
+  const handleAIError = (status: number, message: string, text: string, currentTarget: EventTarget) => {
+    const errorLower = message.toLowerCase()
+    const isRateLimit = status === 429 || errorLower.includes('429') || errorLower.includes('rate limit')
+    const isModelUnavailable = status === 400 && errorLower.includes('not available')
+    
+    if (isRateLimit) {
+      setRateLimitCooldown(15)
+      setInlineError("AI rate limit reached. Waiting 15s before retry...")
+    } else if (isModelUnavailable) {
+      setInlineError(`Model unavailable: ${message}. Try glm-5-free or big-pickle in Settings.`)
+    } else if (status === 401) {
+      setInlineError("Auth failed. Check your API key in Settings — billing may be required.")
+    } else {
+      setInlineError(`AI error: ${message}. Fell back to heuristic.`)
+    }
+    setLastAIStatus('fallback')
+    onInjectEvent(text, currentTarget)
   }
 
   const handleInject = async () => {
@@ -126,7 +128,10 @@ export default function EventForge({ onInjectEvent, entityAName, entityBName, ev
   }
 
   const handleQuickInject = async (label: string) => {
-    const targetLabel = target === 'A' ? entityAName : target === 'B' ? entityBName : 'Both entities'
+    let targetLabel = 'Both entities'
+    if (target === 'A') targetLabel = entityAName
+    else if (target === 'B') targetLabel = entityBName
+    
     const text = `${targetLabel}: ${label}`
     await runPrediction(text, target)
   }
@@ -144,24 +149,27 @@ export default function EventForge({ onInjectEvent, entityAName, entityBName, ev
             <p className="text-[10px] text-[var(--text-muted)]">What happens next?</p>
           </div>
         </div>
-        {apiKey ? (
-          <div className={`flex items-center gap-1.5 px-2 py-1 rounded border ${
-            lastAIStatus === 'success' 
-              ? 'bg-emerald-500/10 border-emerald-500/20' 
-              : lastAIStatus === 'fallback' 
-                ? 'bg-amber-500/10 border-amber-500/20' 
-                : 'bg-[#06b6d4]/10 border-[#06b6d4]/20'
-          }`}>
-            <Sparkles className={`w-3 h-3 ${
-              lastAIStatus === 'success' ? 'text-emerald-400' : lastAIStatus === 'fallback' ? 'text-amber-400' : 'text-[#06b6d4]'
-            }`} />
-            <span className={`text-[9px] font-bold uppercase tracking-wider ${
-              lastAIStatus === 'success' ? 'text-emerald-400' : lastAIStatus === 'fallback' ? 'text-amber-400' : 'text-[#06b6d4]'
-            }`}>
-              {lastAIStatus === 'success' ? 'AI Success' : lastAIStatus === 'fallback' ? 'Fallback' : 'AI Active'}
-            </span>
-          </div>
-        ) : (
+        {apiKey ? (() => {
+          const isSuccess = lastAIStatus === 'success'
+          const isFallback = lastAIStatus === 'fallback'
+          
+          let statusColor = '[#06b6d4]'
+          if (isSuccess) statusColor = 'emerald'
+          else if (isFallback) statusColor = 'amber'
+
+          let statusText = 'AI Active'
+          if (isSuccess) statusText = 'AI Success'
+          else if (isFallback) statusText = 'Fallback'
+
+          return (
+            <div className={`flex items-center gap-1.5 px-2 py-1 rounded border bg-${statusColor}-500/10 border-${statusColor}-500/20`}>
+              <Sparkles className={`w-3 h-3 text-${statusColor}-400`} />
+              <span className={`text-[9px] font-bold uppercase tracking-wider text-${statusColor}-400`}>
+                {statusText}
+              </span>
+            </div>
+          )
+        })() : (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-amber-500/10 border border-amber-500/20">
             <AlertTriangle className="w-3 h-3 text-amber-400" />
             <span className="text-[9px] font-bold text-amber-400 uppercase tracking-wider">No Key</span>
@@ -226,13 +234,15 @@ export default function EventForge({ onInjectEvent, entityAName, entityBName, ev
               : 'bg-[var(--surface)] text-[var(--text-muted)]'
           }`}
         >
-          {isInjecting ? (
-            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }} className="w-4 h-4 border-2 border-[var(--text-muted)] border-t-white rounded-full" />
-          ) : rateLimitCooldown > 0 ? (
-            <span className="text-xs font-bold">{rateLimitCooldown}</span>
-          ) : (
-            <Send className="w-4 h-4" />
-          )}
+          {(() => {
+            if (isInjecting) {
+              return <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }} className="w-4 h-4 border-2 border-[var(--text-muted)] border-t-white rounded-full" />
+            }
+            if (rateLimitCooldown > 0) {
+              return <span className="text-xs font-bold">{rateLimitCooldown}</span>
+            }
+            return <Send className="w-4 h-4" />
+          })()}
         </button>
       </div>
 
@@ -271,11 +281,11 @@ export default function EventForge({ onInjectEvent, entityAName, entityBName, ev
                   <p className="font-medium truncate">{evt.label}</p>
                   <p className="text-[var(--text-muted)] text-[10px]">Day {evt.day} • Impact: {evt.impact > 0 ? '+' : ''}{evt.impact}</p>
                 </div>
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                  evt.targetEntity === 'A' ? 'bg-[#06b6d4]/20 text-[#06b6d4]' :
-                  evt.targetEntity === 'B' ? 'bg-[#f43f5e]/20 text-[#f43f5e]' :
-                  'bg-[#6366f1]/20 text-[#6366f1]'
-                }`}>
+                <span className={(() => {
+                  if (evt.targetEntity === 'A') return 'px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#06b6d4]/20 text-[#06b6d4]'
+                  if (evt.targetEntity === 'B') return 'px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#f43f5e]/20 text-[#f43f5e]'
+                  return 'px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#6366f1]/20 text-[#6366f1]'
+                })()}>
                   {evt.targetEntity}
                 </span>
               </motion.div>

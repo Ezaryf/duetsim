@@ -99,34 +99,41 @@ export default function Home() {
       ctx.fillRect(0, 0, canvas.width, canvas.height)
 
       particles.forEach((p, i) => {
-        p.x += p.vx
-        p.y += p.vy
-        if (p.x < 0 || p.x > canvas.width) p.vx *= -1
-        if (p.y < 0 || p.y > canvas.height) p.vy *= -1
-
-        ctx.beginPath()
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
-        ctx.fillStyle = p.color
-        ctx.globalAlpha = p.alpha
-        ctx.fill()
-
-        particles.slice(i + 1).forEach(p2 => {
-          const dx = p2.x - p.x
-          const dy = p2.y - p.y
-          const dist = Math.sqrt(dx * dx + dy * dy)
-          if (dist < 120) {
-            ctx.beginPath()
-            ctx.moveTo(p.x, p.y)
-            ctx.lineTo(p2.x, p2.y)
-            ctx.strokeStyle = p.color
-            ctx.globalAlpha = 0.06 * (1 - dist / 120)
-            ctx.lineWidth = 0.5
-            ctx.stroke()
-          }
-        })
+        updateAndDrawParticle(ctx, p, canvas.width, canvas.height)
+        drawConnections(ctx, p, particles.slice(i + 1))
       })
       ctx.globalAlpha = 1
       animationId = requestAnimationFrame(animate)
+    }
+
+    const updateAndDrawParticle = (ctx: CanvasRenderingContext2D, p: any, width: number, height: number) => {
+      p.x += p.vx
+      p.y += p.vy
+      if (p.x < 0 || p.x > width) p.vx *= -1
+      if (p.y < 0 || p.y > height) p.vy *= -1
+
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+      ctx.fillStyle = p.color
+      ctx.globalAlpha = p.alpha
+      ctx.fill()
+    }
+
+    const drawConnections = (ctx: CanvasRenderingContext2D, p: any, others: any[]) => {
+      others.forEach(p2 => {
+        const dx = p2.x - p.x
+        const dy = p2.y - p.y
+        const dist = Math.hypot(dx, dy)
+        if (dist < 120) {
+          ctx.beginPath()
+          ctx.moveTo(p.x, p.y)
+          ctx.lineTo(p2.x, p2.y)
+          ctx.strokeStyle = p.color
+          ctx.globalAlpha = 0.06 * (1 - dist / 120)
+          ctx.lineWidth = 0.5
+          ctx.stroke()
+        }
+      })
     }
     animate()
 

@@ -37,7 +37,7 @@ interface ZenModel {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function SettingsModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
+export default function SettingsModal({ isOpen, onClose }: Readonly<{ isOpen: boolean, onClose: () => void }>) {
   const { apiKey, baseUrl, model, endpointType, setApiKey, setBaseUrl, setModel, setEndpointType, setProviderType } = useSettingsStore()
   const [mounted, setMounted] = useState(false)
 
@@ -126,39 +126,15 @@ export default function SettingsModal({ isOpen, onClose }: { isOpen: boolean, on
     setValidationError('')
 
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 10000)
-
-      const res = await fetch('/api/models', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ baseUrl: localUrl, apiKey: localKey }),
-      })
-      clearTimeout(timeoutId)
+      const res = await validateApiKey(localUrl, localKey)
 
       if (!res.ok && res.status !== 404 && res.status !== 405) {
-        if (res.status === 429) {
-          setSaveState('error')
-          setValidationError('Rate limit exceeded (429). Please wait a moment and try again.')
-          return
-        }
-        const errText = await res.text()
-        let detail = 'Invalid API key or endpoint.'
-        try {
-          const errJson = JSON.parse(errText)
-          detail = errJson.error?.message || errJson.message || detail
-        } catch (_e) { /* raw text is fine */ }
-        setSaveState('error')
-        setValidationError(detail)
+        await handleValidationError(res)
         return
       }
 
       // Key is valid — save everything
-      setApiKey(localKey)
-      setBaseUrl(localUrl)
-      setModel(localModel)
-      setEndpointType(localEndpointType)
-      setProviderType(activeProviderId)
+      saveToStore()
       setSaveState('success')
       setTimeout(() => {
         onClose()
@@ -166,13 +142,59 @@ export default function SettingsModal({ isOpen, onClose }: { isOpen: boolean, on
       }, 800)
 
     } catch (err: unknown) {
-      setSaveState('error')
-      if (err instanceof Error && err.name === 'AbortError') {
-        setValidationError('Connection timed out. Check your endpoint URL.')
-      } else {
-        setValidationError(err instanceof Error ? err.message : 'Could not reach the AI provider.')
-      }
+      handleConnectionError(err)
     }
+  }
+
+  const validateApiKey = async (url: string, key: string) => {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000)
+    try {
+      const res = await fetch('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl: url, apiKey: key }),
+        signal: controller.signal
+      })
+      return res
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+
+  const handleValidationError = async (res: Response) => {
+    if (res.status === 429) {
+      setSaveState('error')
+      setValidationError('Rate limit exceeded (429). Please wait a moment and try again.')
+      return
+    }
+    const errText = await res.text()
+    let detail = 'Invalid API key or endpoint.'
+    try {
+      const errJson = JSON.parse(errText)
+      detail = errJson.error?.message || errJson.message || detail
+    } catch (error_) { 
+      // Failed to parse — use default detail
+    }
+    setSaveState('error')
+    setValidationError(detail)
+  }
+
+  const handleConnectionError = (err: unknown) => {
+    setSaveState('error')
+    if (err instanceof Error && err.name === 'AbortError') {
+      setValidationError('Connection timed out. Check your endpoint URL.')
+    } else {
+      setValidationError(err instanceof Error ? err.message : 'Could not reach the AI provider.')
+    }
+  }
+
+  const saveToStore = () => {
+    setApiKey(localKey)
+    setBaseUrl(localUrl)
+    setModel(localModel)
+    setEndpointType(localEndpointType)
+    setProviderType(activeProviderId)
   }
 
   const isCustom = activeProviderId === 'custom'
@@ -223,7 +245,7 @@ export default function SettingsModal({ isOpen, onClose }: { isOpen: boolean, on
           <div className="p-6 pt-2 flex flex-col gap-6 overflow-y-auto flex-1 min-h-0">
             {/* Provider Grid */}
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider ml-1">Provider Preset</label>
+              <span className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider ml-1">Provider Preset</span>
               <div className="grid grid-cols-2 gap-2">
                 {PROVIDERS.map((prov) => (
                   <button
@@ -253,10 +275,11 @@ export default function SettingsModal({ isOpen, onClose }: { isOpen: boolean, on
                     exit={{ opacity: 0, height: 0 }}
                     className="flex flex-col gap-1.5"
                   >
-                    <label className="text-xs font-semibold text-[var(--text-muted)] flex items-center gap-1.5 ml-1">
+                    <label htmlFor="base-url-input" className="text-xs font-semibold text-[var(--text-muted)] flex items-center gap-1.5 ml-1">
                       <Server className="w-3.5 h-3.5" /> Endpoint Base URL
                     </label>
                     <input
+                      id="base-url-input"
                       type="text"
                       value={localUrl}
                       onChange={e => { setLocalUrl(e.target.value); setSaveState('idle'); setValidationError('') }}
@@ -285,6 +308,7 @@ export default function SettingsModal({ isOpen, onClose }: { isOpen: boolean, on
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-muted)]" />
                       <input
+                        id="model-search-input"
                         type="text"
                         value={modelSearch}
                         onChange={e => setModelSearch(e.target.value)}
@@ -333,11 +357,12 @@ export default function SettingsModal({ isOpen, onClose }: { isOpen: boolean, on
                   </motion.div>
                 ) : (
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-[var(--text-muted)] flex items-center gap-1.5 ml-1">
+                    <label htmlFor="model-id-input" className="text-xs font-semibold text-[var(--text-muted)] flex items-center gap-1.5 ml-1">
                       <Database className="w-3.5 h-3.5" /> Model ID
                       {isOpenCode && modelsLoading && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
                     </label>
                     <input
+                      id="model-id-input"
                       type="text"
                       value={localModel}
                       onChange={e => { setLocalModel(e.target.value); setLocalEndpointType(inferEndpointType(e.target.value)) }}
@@ -350,10 +375,11 @@ export default function SettingsModal({ isOpen, onClose }: { isOpen: boolean, on
 
               {/* API Key */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold text-[var(--text-muted)] flex items-center gap-1.5 ml-1">
+                <label htmlFor="api-key-input" className="text-xs font-semibold text-[var(--text-muted)] flex items-center gap-1.5 ml-1">
                   <Key className="w-3.5 h-3.5" /> API Key
                 </label>
                 <input
+                  id="api-key-input"
                   type="password"
                   value={localKey}
                   onChange={e => { setLocalKey(e.target.value); setSaveState('idle'); setValidationError('') }}
@@ -397,38 +423,48 @@ export default function SettingsModal({ isOpen, onClose }: { isOpen: boolean, on
             <button
               onClick={handleSave}
               disabled={saveState === 'success' || saveState === 'validating' || !localKey}
-              className={`relative overflow-hidden px-8 py-2.5 text-sm font-bold rounded-xl transition-all ${
-                saveState === 'success'
-                  ? 'bg-emerald-500 text-white'
-                  : saveState === 'validating'
-                    ? 'bg-[var(--primary)] text-white cursor-wait'
-                    : !localKey
-                      ? 'bg-[var(--surface-hover)] text-[var(--text-muted)] cursor-not-allowed'
-                      : 'bg-white text-black hover:bg-white/90 shadow-[0_0_20px_rgba(255,255,255,0.2)]'
-              }`}
+              className={(() => {
+                const isSuccess = saveState === 'success'
+                const isValidating = saveState === 'validating'
+                if (isSuccess) return 'relative overflow-hidden px-8 py-2.5 text-sm font-bold rounded-xl transition-all bg-emerald-500 text-white'
+                if (isValidating) return 'relative overflow-hidden px-8 py-2.5 text-sm font-bold rounded-xl transition-all bg-[var(--primary)] text-white cursor-wait'
+                if (!localKey) return 'relative overflow-hidden px-8 py-2.5 text-sm font-bold rounded-xl transition-all bg-[var(--surface-hover)] text-[var(--text-muted)] cursor-not-allowed'
+                return 'relative overflow-hidden px-8 py-2.5 text-sm font-bold rounded-xl transition-all bg-white text-black hover:bg-white/90 shadow-[0_0_20px_rgba(255,255,255,0.2)]'
+              })()}
             >
-              <AnimatePresence mode="popLayout">
-                {saveState === 'success' ? (
-                  <motion.div
-                    key="saved"
-                    initial={{ y: 20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    exit={{ y: -20, opacity: 0 }}
-                    className="flex items-center gap-2"
-                  >
-                    <CheckCircle2 className="w-4 h-4" /> Connected
-                  </motion.div>
-                ) : saveState === 'validating' ? (
-                  <motion.div
-                    key="validating"
-                    initial={{ y: 20, opacity: 0 }}
-                    animate={{ y: 0, opacity: 1 }}
-                    exit={{ y: -20, opacity: 0 }}
-                    className="flex items-center gap-2"
-                  >
-                    <Loader2 className="w-4 h-4 animate-spin" /> Validating…
-                  </motion.div>
-                ) : (
+              {(() => {
+                const isSuccess = saveState === 'success'
+                const isValidating = saveState === 'validating'
+                
+                if (isSuccess) {
+                  return (
+                    <motion.div
+                      key="saved"
+                      initial={{ y: 20, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      exit={{ y: -20, opacity: 0 }}
+                      className="flex items-center gap-2"
+                    >
+                      <CheckCircle2 className="w-4 h-4" /> Connected
+                    </motion.div>
+                  )
+                }
+                
+                if (isValidating) {
+                  return (
+                    <motion.div
+                      key="validating"
+                      initial={{ y: 20, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      exit={{ y: -20, opacity: 0 }}
+                      className="flex items-center gap-2"
+                    >
+                      <Loader2 className="w-4 h-4 animate-spin" /> Validating…
+                    </motion.div>
+                  )
+                }
+                
+                return (
                   <motion.div
                     key="save"
                     initial={{ y: 20, opacity: 0 }}
@@ -437,8 +473,8 @@ export default function SettingsModal({ isOpen, onClose }: { isOpen: boolean, on
                   >
                     Save Connection
                   </motion.div>
-                )}
-              </AnimatePresence>
+                )
+              })()}
             </button>
           </div>
         </motion.div>

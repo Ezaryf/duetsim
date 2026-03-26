@@ -63,55 +63,50 @@ function describeStateChange(
   event?: ForgeEvent
 ): { stateChange: string; reason: string } {
   if (event?.stateChange) {
-    return {
-      stateChange: event.stateChange,
-      reason: event.description,
-    }
+    return { stateChange: event.stateChange, reason: event.description }
   }
 
   const deltaA = newA - prevA
   const deltaB = newB - prevB
 
   if (event) {
-    const effect =
-      deltaA > 5
-        ? 'accelerating growth'
-        : deltaA < -5
-          ? 'momentum loss'
-          : 'stabilizing'
-    const bEffect =
-      deltaB > 5
-        ? 'competitive surge'
-        : deltaB < -5
-          ? 'decline pressure'
-          : 'holding steady'
-
-    return {
-      stateChange: `${event.label} → ${effect}`,
-      reason: `${event.description} triggers ${effect} for Entity A and ${bEffect} for Entity B`,
-    }
+    return describeEventEffect(event, deltaA, deltaB)
   }
 
+  return describeGenericStateChange(deltaA, deltaB)
+}
+
+function describeEventEffect(event: ForgeEvent, deltaA: number, deltaB: number) {
+  let effect = 'stabilizing'
+  if (deltaA > 5) effect = 'accelerating growth'
+  else if (deltaA < -5) effect = 'momentum loss'
+
+  let bEffect = 'holding steady'
+  if (deltaB > 5) bEffect = 'competitive surge'
+  else if (deltaB < -5) bEffect = 'decline pressure'
+
+  return {
+    stateChange: `${event.label} → ${effect}`,
+    reason: `${event.description} triggers ${effect} for Entity A and ${bEffect} for Entity B`,
+  }
+}
+
+function describeGenericStateChange(deltaA: number, deltaB: number) {
   if (Math.abs(deltaA) < 1 && Math.abs(deltaB) < 1) {
     return { stateChange: 'equilibrium', reason: 'Both entities maintaining current trajectory' }
   }
-
   if (deltaA > 3 && deltaB > 3) {
     return { stateChange: 'mutual growth', reason: 'Market expansion benefits both entities' }
   }
-
   if (deltaA > 3 && deltaB < -3) {
     return { stateChange: 'A gaining, B declining', reason: 'Competitive pressure shifting toward A' }
   }
-
   if (deltaB > 3 && deltaA < -3) {
     return { stateChange: 'B gaining, A declining', reason: 'Competitive pressure shifting toward B' }
   }
-
   if (deltaA > 0) {
     return { stateChange: 'A strengthening', reason: 'Entity A showing positive momentum' }
   }
-
   return { stateChange: 'B strengthening', reason: 'Entity B showing positive momentum' }
 }
 
@@ -128,8 +123,13 @@ function generateBranchTimeline(
   const strengthA = normalizeEntityStrength(entityA)
   const strengthB = normalizeEntityStrength(entityB)
 
-  const rA = 0.04 + (bias === 'A-favored' ? 0.02 : bias === 'B-favored' ? -0.01 : 0)
-  const rB = 0.04 + (bias === 'B-favored' ? 0.02 : bias === 'A-favored' ? -0.01 : 0)
+  let rA = 0.04
+  if (bias === 'A-favored') rA += 0.02
+  else if (bias === 'B-favored') rA -= 0.01
+
+  let rB = 0.04
+  if (bias === 'B-favored') rB += 0.02
+  else if (bias === 'A-favored') rB -= 0.01
 
   const alphaAB = 0.3 + Math.random() * 0.3 + (bias === 'B-favored' ? 0.15 : 0)
   const alphaBA = 0.3 + Math.random() * 0.3 + (bias === 'A-favored' ? 0.15 : 0)
@@ -157,7 +157,7 @@ function generateBranchTimeline(
     nodes.push({
       id: `node_${branchId}_${day}`,
       day,
-      parentId: nodes.length > 0 ? nodes[nodes.length - 1].id : null,
+      parentId: nodes.length > 0 ? nodes.at(-1)!.id : null,
       branchId,
       entityAScore: Math.round(state.a * 10) / 10,
       entityBScore: Math.round(state.b * 10) / 10,
@@ -179,44 +179,50 @@ export function buildCausalGraph(branches: Branch[]): CausalEdge[] {
   const edges: CausalEdge[] = []
 
   for (const branch of branches) {
-    for (let i = 0; i < branch.nodes.length - 1; i++) {
-      const from = branch.nodes[i]
-      const to = branch.nodes[i + 1]
-
-      const shift = Math.abs(to.probabilityShift)
-      const strength = Math.min(1, shift / 15)
-
-      if (strength > 0.1) {
-        edges.push({
-          id: `edge_${from.id}_${to.id}`,
-          fromNodeId: from.id,
-          toNodeId: to.id,
-          label: to.triggerEvent?.label || to.stateChange,
-          strength,
-        })
-      }
-    }
-
-    // Cross-branch causal edges (from fork points)
-    if (branch.forkDay !== null) {
-      const forkNode = branch.nodes.find(n => n.day === branch.forkDay)
-      if (forkNode && branch.parentBranchId) {
-        const parentBranch = branches.find(b => b.id === branch.parentBranchId)
-        const parentForkNode = parentBranch?.nodes.find(n => n.day === branch.forkDay)
-        if (parentForkNode) {
-          edges.push({
-            id: `edge_fork_${parentForkNode.id}_${forkNode.id}`,
-            fromNodeId: parentForkNode.id,
-            toNodeId: forkNode.id,
-            label: 'branch divergence',
-            strength: 0.8,
-          })
-        }
-      }
-    }
+    addSequentialEdges(branch, edges)
+    addCrossBranchEdges(branch, branches, edges)
   }
 
   return edges
+}
+
+function addSequentialEdges(branch: Branch, edges: CausalEdge[]) {
+  for (let i = 0; i < branch.nodes.length - 1; i++) {
+    const from = branch.nodes[i]
+    const to = branch.nodes[i + 1]
+    const shift = Math.abs(to.probabilityShift)
+    const strength = Math.min(1, shift / 15)
+
+    if (strength > 0.1) {
+      edges.push({
+        id: `edge_${from.id}_${to.id}`,
+        fromNodeId: from.id,
+        toNodeId: to.id,
+        label: to.triggerEvent?.label || to.stateChange,
+        strength,
+      })
+    }
+  }
+}
+
+function addCrossBranchEdges(branch: Branch, allBranches: Branch[], edges: CausalEdge[]) {
+  if (branch.forkDay === null || !branch.parentBranchId) return
+
+  const forkNode = branch.nodes.find(n => n.day === branch.forkDay)
+  if (!forkNode) return
+
+  const parentBranch = allBranches.find(b => b.id === branch.parentBranchId)
+  const parentForkNode = parentBranch?.nodes.find(n => n.day === branch.forkDay)
+
+  if (parentForkNode) {
+    edges.push({
+      id: `edge_fork_${parentForkNode.id}_${forkNode.id}`,
+      fromNodeId: parentForkNode.id,
+      toNodeId: forkNode.id,
+      label: 'branch divergence',
+      strength: 0.8,
+    })
+  }
 }
 
 // ─── Create Simulation ───────────────────────────────────────────────────────
@@ -292,14 +298,18 @@ export function injectEvent(
     simulation.entityB,
     simulation.totalDays,
     altBranchId,
-    altBias as 'A-favored' | 'B-favored',
+    altBias,
     allEvents
   )
 
   const newForkBranch: Branch = {
     id: forkBranchId,
     name: `After: ${event.label}`,
-    color: event.targetEntity === 'A' ? '#06b6d4' : event.targetEntity === 'B' ? '#f43f5e' : '#8b5cf6',
+    color: (() => {
+      if (event.targetEntity === 'A') return '#06b6d4'
+      if (event.targetEntity === 'B') return '#f43f5e'
+      return '#8b5cf6'
+    })(),
     nodes: newNodes,
     events: allEvents,
     probability: event.probability || 40,
@@ -353,7 +363,7 @@ export function getActiveBranch(simulation: Simulation): Branch | undefined {
 }
 
 export function getBranchFinalScores(branch: Branch): { scoreA: number; scoreB: number } {
-  const lastNode = branch.nodes[branch.nodes.length - 1]
+  const lastNode = branch.nodes.at(-1)
   return {
     scoreA: lastNode?.entityAScore || 50,
     scoreB: lastNode?.entityBScore || 50,
