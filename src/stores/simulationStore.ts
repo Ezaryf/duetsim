@@ -77,7 +77,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     if (!activeBranch) return
 
     // Calculate injection day dynamically to progress the timeline
-    const lastEvent = activeBranch.events[activeBranch.events.length - 1]
+    const lastEvent = activeBranch.events.at(-1)
     const injectionDay = lastEvent 
       ? Math.min(lastEvent.day + 15, simulation.totalDays - 5)
       : 15

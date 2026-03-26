@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, GitBranch, Trophy, Loader2, RotateCcw, Save } from 'lucide-react'
 import { useSimulationStore } from '@/stores/simulationStore'
@@ -52,7 +51,7 @@ function ReplayContent() {
         {/* Branch Selector */}
         <div className="grid md:grid-cols-2 gap-6 mb-8">
           <div>
-            <label className="block text-xs font-semibold text-[#06b6d4] uppercase tracking-widest mb-3">Branch A (Left)</label>
+            <h3 className="block text-xs font-semibold text-[#06b6d4] uppercase tracking-widest mb-3">Branch A (Left)</h3>
             <div className="space-y-2">
               {sorted.map(branch => (
                 <BranchOption
@@ -66,7 +65,7 @@ function ReplayContent() {
             </div>
           </div>
           <div>
-            <label className="block text-xs font-semibold text-[#f43f5e] uppercase tracking-widest mb-3">Branch B (Right)</label>
+            <h3 className="block text-xs font-semibold text-[#f43f5e] uppercase tracking-widest mb-3">Branch B (Right)</h3>
             <div className="space-y-2">
               {sorted.map(branch => (
                 <BranchOption
@@ -111,7 +110,7 @@ function ReplayContent() {
 
                     return (
                       <motion.div
-                        key={i}
+                        key={nodeA.id}
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: i * 0.03 }}
@@ -182,8 +181,8 @@ function ReplayContent() {
   )
 }
 
-function BranchOption({ branch, isSelected, onSelect, color }: { branch: Branch; isSelected: boolean; onSelect: () => void; color: string }) {
-  const lastNode = branch.nodes[branch.nodes.length - 1]
+function BranchOption({ branch, isSelected, onSelect, color }: Readonly<{ branch: Branch; isSelected: boolean; onSelect: () => void; color: string }>) {
+  const lastNode = branch.nodes.at(-1)
   return (
     <button
       onClick={onSelect}
@@ -210,8 +209,8 @@ function BranchOption({ branch, isSelected, onSelect, color }: { branch: Branch;
   )
 }
 
-function BranchDetail({ branch, label, color, entityAName, entityBName }: { branch: Branch; label: string; color: string; entityAName: string; entityBName: string }) {
-  const lastNode = branch.nodes[branch.nodes.length - 1]
+function BranchDetail({ branch, label, color, entityAName, entityBName }: Readonly<{ branch: Branch; label: string; color: string; entityAName: string; entityBName: string }>) {
+  const lastNode = branch.nodes.at(-1)
   const firstNode = branch.nodes[0]
   if (!lastNode || !firstNode) return null
 
