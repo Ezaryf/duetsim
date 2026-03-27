@@ -8,14 +8,16 @@ import { useSimulationStore } from '@/stores/simulationStore'
 import { getActiveBranch } from '@/lib/engine/engine'
 import Link from 'next/link'
 
-import EntityPanel from '@/components/forge/EntityPanel'
-import BranchGraph from '@/components/forge/BranchGraph'
-import EventForge from '@/components/forge/EventForge'
-import ConfidenceBar from '@/components/forge/ConfidenceBar'
-import BranchList from '@/components/forge/BranchList'
-import ConflictCore3D from '@/components/forge/ConflictCore3D'
-import RealityTicker from '@/components/forge/RealityTicker'
+import BattlefieldGraph from '@/components/forge/BattlefieldGraph'
+import PromptToWorldModal from '@/components/forge/PromptToWorldModal'
+import TensionWidget from '@/components/simulation/TensionWidget'
+import LeftControlPanel from '@/components/simulation/LeftControlPanel'
+import RightObservationPanel from '@/components/simulation/RightObservationPanel'
+import { useSettingsStore } from '@/stores/settingsStore'
+import { useEmergentStore } from '@/stores/emergentStore'
 import SettingsModal from '@/components/ui/SettingsModal'
+import RealityTicker from '@/components/forge/RealityTicker'
+import FloatingScrubber from '@/components/forge/FloatingScrubber'
 
 function ForgeContent() {
   const searchParams = useSearchParams()
@@ -23,150 +25,187 @@ function ForgeContent() {
   const {
     entityA, entityB, simulation, status,
     setEntityA, setEntityB, setCategory,
-    startSimulation, injectEvent, selectBranch,
-    eventHistory, reset,
+    startSimulation, injectEvent, selectBranch, reset,
   } = useSimulationStore()
+  
+  const { apiKey, baseUrl, model, endpointType } = useSettingsStore()
+  const { setWorldState } = useEmergentStore()
 
-  // ─── Bootstrap from URL params ──────────────────────────────────────────
+  // Bootstrap from URL params
   useEffect(() => {
     const a = searchParams.get('a')
     const b = searchParams.get('b')
     const cat = searchParams.get('cat') as any
-
     if (a && b && !entityA && !entityB) {
       setEntityA({
-        id: a,
-        category: cat || 'repo',
-        externalId: a,
-        name: a.split('/').pop() || a,
-        owner: a.includes('/') ? a.split('/')[0] : undefined,
-        description: '',
-        metrics: { stars: 50000 + Math.random() * 150000, forks: 5000 + Math.random() * 30000, watchers: 2000 + Math.random() * 8000 },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        id: a, category: cat || 'repo', externalId: a, name: a.split('/').pop() || a,
+        description: '', metrics: { stars: 50000, forks: 5000, watchers: 2000 },
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       })
       setEntityB({
-        id: b,
-        category: cat || 'repo',
-        externalId: b,
-        name: b.split('/').pop() || b,
-        owner: b.includes('/') ? b.split('/')[0] : undefined,
-        description: '',
-        metrics: { stars: 50000 + Math.random() * 150000, forks: 5000 + Math.random() * 30000, watchers: 2000 + Math.random() * 8000 },
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        id: b, category: cat || 'repo', externalId: b, name: b.split('/').pop() || b,
+        description: '', metrics: { stars: 50000, forks: 5000, watchers: 2000 },
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
       })
       if (cat) setCategory(cat)
     }
   }, [searchParams])
 
-  // ─── Auto-start simulation ──────────────────────────────────────────────
   useEffect(() => {
     if (entityA && entityB && !simulation && status === 'idle') {
       startSimulation()
     }
   }, [entityA, entityB, simulation, status])
 
-  // ─── Derived data ──────────────────────────────────────────────────────
+  const handleWorldGenerated = (worldData: any) => {
+    // Bootstrap the world state via Zustand based on the AI generation
+    console.log("World Generated:", worldData);
+    setEntityA({
+        id: worldData.protagonist.name.replaceAll(' ', '-').toLowerCase(),
+        category: 'repo',
+        externalId: 'protagonist',
+        name: worldData.protagonist.name,
+        description: worldData.protagonist.description,
+        metrics: { stars: 100, forks: 0, watchers: 100 },
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    });
+    setEntityB({
+        id: worldData.antagonist.name.replaceAll(' ', '-').toLowerCase(),
+        category: 'repo',
+        externalId: 'antagonist',
+        name: worldData.antagonist.name,
+        description: worldData.antagonist.description,
+        metrics: { stars: 100, forks: 0, watchers: 100 },
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    });
+    
+    // Save generated physical laws, hidden factors, and context
+    if (worldData.worldRules && worldData.hiddenVariables) {
+        setWorldState(
+            worldData.worldRules, 
+            worldData.hiddenVariables.map((h: any) => ({ name: h.name, value: h.startingValue })),
+            worldData.scenarioContext
+        );
+    }
+  }
+
   const activeBranch = simulation ? getActiveBranch(simulation) : null
-  const lastNode = activeBranch?.nodes[activeBranch.nodes.length - 1]
+  const lastNode = activeBranch?.nodes.at(-1)
   const scoreA = lastNode?.entityAScore || 50
   const scoreB = lastNode?.entityBScore || 50
-  const confA = lastNode?.confidenceA || 0.5
-  const confB = lastNode?.confidenceB || 0.5
-
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-
-  // ─── Screen Shake Logic ────────────────────────────────────────────────
-  const [shake, setShake] = useState(false)
-  const [lastEventCount, setLastEventCount] = useState(0)
-  const eventCount = activeBranch?.events.length || 0
-
-  useEffect(() => {
-    if (eventCount > lastEventCount) {
-      setLastEventCount(eventCount)
-      setShake(true)
-      const t = setTimeout(() => setShake(false), 400)
-      return () => clearTimeout(t)
-    }
-  }, [eventCount, lastEventCount])
-
-  // ─── Loading state ─────────────────────────────────────────────────────
-  if (status === 'running' || (!simulation && entityA && entityB)) {
-    return (
-      <div className="min-h-screen bg-[var(--bg)] flex flex-col items-center justify-center gap-4">
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-        >
-          <Zap className="w-10 h-10 text-[var(--primary)]" />
-        </motion.div>
-        <p className="text-[var(--text-secondary)] font-medium">Forging future timelines...</p>
-        <p className="text-xs text-[var(--text-muted)]">Simulating branching outcomes</p>
-      </div>
-    )
-  }
-
-  // ─── No entities ───────────────────────────────────────────────────────
-  if (!entityA || !entityB) {
-    return (
-      <div className="min-h-screen bg-[var(--bg)] flex flex-col items-center justify-center gap-4">
-        <p className="text-[var(--text-secondary)]">No entities selected</p>
-        <Link href="/" className="px-6 py-3 rounded-xl bg-[var(--primary)] text-white font-semibold hover:brightness-110 transition-all">
-          ← Choose Entities
-        </Link>
-      </div>
-    )
-  }
 
   const handleRerun = () => {
     reset()
     setTimeout(() => {
-      router.push(`/forge?a=${encodeURIComponent(entityA.externalId)}&b=${encodeURIComponent(entityB.externalId)}&cat=${entityA.category}`)
+      router.push(`/forge?a=${encodeURIComponent(entityA!.externalId)}&b=${encodeURIComponent(entityB!.externalId)}&cat=${entityA!.category}`)
     }, 100)
   }
 
+  const handleNodeDrop = async ({ eventLabel, targetId }: { eventLabel: string, targetId: string }) => {
+    let target: 'A' | 'B' | 'both' = 'both';
+    if (targetId === 'entityA') target = 'A';
+    else if (targetId === 'entityB') target = 'B';
+    
+    try {
+      if (!apiKey) {
+        injectEvent(eventLabel, target);
+        return;
+      }
+
+      const res = await fetch('/api/predictions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entityA: entityA?.name,
+          entityB: entityB?.name,
+          scoreA,
+          scoreB,
+          eventText: eventLabel,
+          target,
+          connection: { apiKey, baseUrl, model, endpointType }
+        })
+      });
+      const aiData = await res.json();
+      if (res.ok) {
+        injectEvent(eventLabel, target, {
+          impact: aiData.impact, label: aiData.label,
+          description: aiData.description, stateChange: aiData.stateChange,
+          probability: aiData.probability, icon: '💥'
+        });
+      } else {
+        injectEvent(eventLabel, target);
+      }
+    } catch {
+      injectEvent(eventLabel, target);
+    }
+  }
+
+  if (status === 'running' || (!simulation && entityA && entityB)) {
+    return (
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4">
+        <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}>
+          <Zap className="w-10 h-10 text-[var(--primary)]" />
+        </motion.div>
+        <p className="text-white/70 font-medium tracking-widest uppercase text-sm">Deploying Combat Engine...</p>
+      </div>
+    )
+  }
+
+  if (!entityA || !entityB) {
+    return (
+        <div className="relative">
+            <PromptToWorldModal onWorldGenerated={handleWorldGenerated} />
+            <div className="absolute top-4 right-4 z-50">
+                <button
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                >
+                    <Settings className="w-4 h-4 text-white/70" />
+                </button>
+            </div>
+            <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+        </div>
+    )
+  }
+
   return (
-    <motion.div 
-      className="min-h-screen bg-[var(--bg)] relative overflow-x-hidden pb-12"
-      animate={shake ? { x: [-8, 8, -8, 8, -4, 4, 0], y: [-4, 4, -4, 4, -2, 2, 0] } : { x: 0, y: 0 }}
-      transition={{ duration: 0.35 }}
-    >
-      {/* 3D WebGL Background Simulation */}
-      <ConflictCore3D scoreA={scoreA} scoreB={scoreB} eventTrigger={eventCount} />
+    <div className="min-h-screen bg-black relative overflow-hidden font-sans">
+      {/* Absolute Battlefield Graph underneath all UI */}
+      {simulation && (
+        <BattlefieldGraph 
+            entityAName={entityA.name}
+            entityBName={entityB.name}
+            scoreA={scoreA}
+            scoreB={scoreB}
+            events={activeBranch?.events || []}
+            onNodeDrop={handleNodeDrop}
+        />
+      )}
 
-      {/* ─── Top Bar ──────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 glass border-b border-[var(--border)]">
-        <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center gap-4">
-          <Link href="/" className="p-2 rounded-lg bg-[var(--surface)] hover:bg-[var(--surface-hover)] transition-colors">
-            <ArrowLeft className="w-4 h-4 text-[var(--text-secondary)]" />
+      {/* ─── Top Military HUD ──────────────────────────────────────────────────── */}
+      <header className="absolute top-0 w-full z-50 bg-black/40 backdrop-blur-xl border-b border-white/10">
+        <div className="max-w-[1800px] mx-auto px-6 py-4 flex items-center gap-6">
+          <Link href="/" className="p-2 rounded-lg hover:bg-white/10 transition-colors">
+            <ArrowLeft className="w-5 h-5 text-white/70" />
           </Link>
-
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            <span className="text-sm font-bold text-[#06b6d4] truncate">{entityA.name}</span>
-            <span className="text-xs text-[var(--text-muted)] flex-shrink-0">vs</span>
-            <span className="text-sm font-bold text-[#f43f5e] truncate">{entityB.name}</span>
+          <div className="flex items-center gap-4 flex-1 min-w-0 font-mono tracking-widest text-lg">
+            <span className="font-bold text-[#06b6d4] uppercase">{entityA.name}</span>
+            <span className="text-sm text-white/40">VS</span>
+            <span className="font-bold text-[#f43f5e] uppercase">{entityB.name}</span>
           </div>
-
-          <div className="flex items-center gap-2">
-            {simulation && (
-              <span className="text-[10px] text-[var(--text-muted)] bg-[var(--surface)] px-3 py-1 rounded-full">
-                {simulation.branches.length} branches • {simulation.totalDays}d
-              </span>
-            )}
+          <div className="flex items-center gap-4">
             <button
               onClick={() => setIsSettingsOpen(true)}
-              className="p-2 rounded-lg bg-[var(--surface)] hover:bg-[var(--surface-hover)] transition-colors"
-              title="AI Settings"
+              className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
             >
-              <Settings className="w-4 h-4 text-[var(--text-secondary)]" />
+              <Settings className="w-4 h-4 text-white/70" />
             </button>
             <button
               onClick={handleRerun}
-              className="p-2 rounded-lg bg-[var(--surface)] hover:bg-[var(--surface-hover)] transition-colors"
-              title="Re-run simulation"
+              className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
             >
-              <RefreshCw className="w-4 h-4 text-[var(--text-secondary)]" />
+              <RefreshCw className="w-4 h-4 text-white/70" />
             </button>
           </div>
         </div>
@@ -174,58 +213,41 @@ function ForgeContent() {
 
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
-      {/* ─── Main Layout ──────────────────────────────────────────────── */}
+      {/* ─── Floating Layout Elements ─────────────────────────────────────────── */}
       {simulation && (
-        <div className="max-w-[1600px] mx-auto p-4 relative z-10">
-          <div className="grid grid-cols-12 gap-4">
-
-            {/* Left — Entity Panels */}
-            <div className="col-span-12 lg:col-span-2 flex flex-col gap-4">
-              <EntityPanel entity={entityA} side="A" confidence={confA} score={scoreA} />
-              <EntityPanel entity={entityB} side="B" confidence={confB} score={scoreB} />
+          <>
+            {/* HUD OVERLAY - Top Center: World Status */}
+            <div className="absolute top-24 left-1/2 -translate-x-1/2 z-40 pointer-events-auto">
+                <TensionWidget />
             </div>
 
-            {/* Center — Graph + Confidence Bar */}
-            <div className="col-span-12 lg:col-span-7 flex flex-col gap-4">
-              <BranchGraph
-                simulation={simulation}
-                activeBranchId={simulation.activeBranchId}
-                onSelectBranch={selectBranch}
-              />
-              <ConfidenceBar
-                scoreA={scoreA}
-                scoreB={scoreB}
-                nameA={entityA.name}
-                nameB={entityB.name}
-              />
-              {/* Branch List — below graph on desktop */}
-              <BranchList
+            {/* HUD OVERLAY - Left Sidebar: Director's Sandbox */}
+            <div className="absolute top-24 left-8 bottom-32 z-40 pointer-events-none flex flex-col justify-end">
+                <LeftControlPanel />
+            </div>
+
+            {/* HUD OVERLAY - Right Sidebar: Observation Deck */}
+            <div className="absolute top-24 right-8 bottom-32 z-40 pointer-events-none flex flex-col justify-end">
+                <RightObservationPanel />
+            </div>
+
+            {/* Bottom Center: Floating Scrubber */}
+            <FloatingScrubber 
                 branches={simulation.branches}
                 activeBranchId={simulation.activeBranchId}
                 onSelectBranch={selectBranch}
-              />
-            </div>
+            />
 
-            {/* Right — Event Forge */}
-            <div className="col-span-12 lg:col-span-3">
-              <div className="sticky top-[72px]">
-                <EventForge
-                  onInjectEvent={injectEvent}
-                  entityAName={entityA.name}
-                  entityBName={entityB.name}
-                  eventHistory={eventHistory}
-                />
-              </div>
+            {/* Reality Ticker bottom edge */}
+            <div className="absolute bottom-0 w-full z-30 pointer-events-none">
+              <RealityTicker events={activeBranch?.events || []} />
             </div>
-          </div>
-          
-          {/* Scroll Reality Ticker at the absolute bottom */}
-          <RealityTicker events={activeBranch?.events || []} />
-        </div>
+          </>
       )}
-    </motion.div>
+    </div>
   )
 }
+
 
 export default function ForgePage() {
   return (
