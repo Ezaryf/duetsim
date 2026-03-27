@@ -153,3 +153,57 @@ export interface DuelPreset {
 }
 
 export type SimulationStatus = 'idle' | 'running' | 'complete' | 'error'
+
+// ─── Consequence Engine Types ─────────────────────────────────────────────
+
+export type AgentRole = 'founder' | 'competitor' | 'regulator' | 'public'
+
+export interface AgentState {
+  resources: number
+  trust: number
+  riskTolerance: number
+}
+
+export interface HiddenVariable {
+  name: string
+  value: number
+}
+
+export interface WorldRules {
+  volatility: number
+  transparency: number
+  trustDecay: number
+}
+
+export interface CascadeStep {
+  step: number
+  trigger: string
+  perceptions: Array<{
+    agent: AgentRole
+    perception: string
+    emotionalState: string
+  }>
+  actions: Array<{
+    agent: AgentRole
+    action: string
+    reasoning: string
+  }>
+  hiddenVariableShifts: Array<{
+    name: string
+    before: number
+    after: number
+    reason: string
+  }>
+  narrative: string
+}
+
+export interface FinalOutcome {
+  winner: string
+  narrative: string
+  resourceChanges: Record<AgentRole, string>
+}
+
+export interface ConsequenceResult {
+  cascade: CascadeStep[]
+  finalOutcome: FinalOutcome
+}
